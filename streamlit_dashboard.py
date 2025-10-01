@@ -19,7 +19,7 @@ def summarise_ticket():
     with dspy.context(
         lm=dspy.LM(
             model="openai/gpt-oss-120b",
-            api_key= os.getenv("CEREBRAS_API_KEY")
+            api_key= os.getenv("CEREBRAS_API_KEY"),
             api_base="https://api.cerebras.ai/v1"
         ),
         cache=True
