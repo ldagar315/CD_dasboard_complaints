@@ -21,7 +21,7 @@ from agno.models.google import Gemini
 
 # Set environment variables for Arize Phoenix
 os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = "http://localhost:6006"
-os.environ['WANDB_API_KEY'] = '4bc35b8e443c90c5bfb2d89bd1fb274d107ef6d7'
+os.environ['WANDB_API_KEY'] = ''
 #os.environ['PHOENIX_CLIENT_HEADERS'] = "ak-15fa9c3e-6c0c-40f9-923e-030a7f5edc1f-vKi92gpwYGZVH7NMbq_P5nryqil_OPqF"
 
 
@@ -207,7 +207,6 @@ def complaints_sql_tool(query: str) -> dict:
 
 
 agent = Agent(
-    #model=Cerebras(id="llama-4-maverick-17b-128e-instruct", api_key="csk-5prhjrydy285t945r2y3jpr2nhceecr6m3kpeprfeh9v55wk", max_completion_tokens= 32000),
     model = Gemini(id="gemini-2.5-flash", api_key="GEMINI_API_KEY"),
     reasoning_model= Groq(id = "deepseek-r1-distill-llama-70b", api_key="GROQ_API_KEY"),
     system_message= system_prompt.system_prompt,
@@ -283,4 +282,5 @@ pprint(run_response.metrics.to_dict())
 # Print the aggregated metrics for the whole session
 print("---" * 5, "Session Metrics", "---" * 5)
 pprint(agent.get_session_metrics().to_dict())"""
+
 
