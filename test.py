@@ -61,7 +61,7 @@ level_2_classification_values = df['level_2_classification'].unique().tolist()
 dspy.configure(
     lm=dspy.LM(
         model="openai/gpt-oss-120b",
-        api_key="csk-5prhjrydy285t945r2y3jpr2nhceecr6m3kpeprfeh9v55wk",
+        api_key="CEREBRAS_API_KEY",
         api_base="https://api.cerebras.ai/v1"
     ),
     cache=True
@@ -208,8 +208,8 @@ def complaints_sql_tool(query: str) -> dict:
 
 agent = Agent(
     #model=Cerebras(id="llama-4-maverick-17b-128e-instruct", api_key="csk-5prhjrydy285t945r2y3jpr2nhceecr6m3kpeprfeh9v55wk", max_completion_tokens= 32000),
-    model = Gemini(id="gemini-2.5-flash", api_key="AIzaSyBDrcGqmpaiLgzZ-flFoHoBctHVCP7gZ1I"),
-    reasoning_model= Groq(id = "deepseek-r1-distill-llama-70b", api_key="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"),
+    model = Gemini(id="gemini-2.5-flash", api_key="GEMINI_API_KEY"),
+    reasoning_model= Groq(id = "deepseek-r1-distill-llama-70b", api_key="GROQ_API_KEY"),
     system_message= system_prompt.system_prompt,
     description = "You are a helpful data analyst assistant of Country Delight. You have access to customer support tickets data. Use SQL to answer questions about the data. If you don't know the answer, just say you don't know. Do not make up an answer.",
     tools = [DuckDbTools(db_path="my_database.db", include_tools =["inspect_query",'run_query','summarize_table','full_text_search','create_fts_index']), ReasoningTools(add_instructions=True)],
@@ -283,3 +283,4 @@ pprint(run_response.metrics.to_dict())
 # Print the aggregated metrics for the whole session
 print("---" * 5, "Session Metrics", "---" * 5)
 pprint(agent.get_session_metrics().to_dict())"""
+
