@@ -28,5 +28,5 @@ jobs:
       # Step 4: Run the Streamlit application with the secret
       - name: Run Streamlit script
         env:
-          API_TOKEN: ${{ secrets.API_TOKEN }}  # Expose the GitHub secret as an environment variable
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}  # Expose the GitHub secret as an environment variable
         run: streamlit run streamlit_dashboard.py
