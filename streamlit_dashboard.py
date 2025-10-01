@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import dspy
 from typing import List, Literal
+import os
 
 
 if 'summary_output' not in st.session_state:
@@ -18,7 +19,7 @@ def summarise_ticket():
     with dspy.context(
         lm=dspy.LM(
             model="openai/gpt-oss-120b",
-            api_key="csk-5prhjrydy285t945r2y3jpr2nhceecr6m3kpeprfeh9v55wk",
+            api_key= os.getenv("CEREBRAS_API_KEY")
             api_base="https://api.cerebras.ai/v1"
         ),
         cache=True
