@@ -1,0 +1,32 @@
+name: Run Streamlit Dashboard
+
+on:
+  push:
+    branches:
+      - main  # This workflow runs on every push to the 'main' branch
+
+jobs:
+  run-streamlit:
+    runs-on: ubuntu-latest  # Use a fresh Ubuntu-based runner
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up a Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'  # You can specify a version like '3.10'
+
+      # Step 3: Install dependencies from requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # Assumes you have a requirements.txt file
+
+      # Step 4: Run the Streamlit application with the secret
+      - name: Run Streamlit script
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}  # Expose the GitHub secret as an environment variable
+        run: streamlit run streamlit_dashboard.py
