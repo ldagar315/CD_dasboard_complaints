@@ -5,7 +5,7 @@ from typing import List, Literal
 import os
 import numpy as np
 import chromadb
-from sklearn.decomposition import PCA
+from scikit-learn.decomposition import PCA
 from sentence_transformers import SentenceTransformer
 import uuid
 
