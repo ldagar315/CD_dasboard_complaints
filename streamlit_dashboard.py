@@ -17,6 +17,8 @@ if 'collection_name' not in st.session_state:
     st.session_state.collection_name = ""
 if 'filtered_df' not in st.session_state:
     st.session_state.filtered_df = pd.DataFrame()
+if 'df' not in st.session_state:
+    st.session_state.df = pd.DataFrame()
 cerebras_key = st.secrets.get("CEREBRAS_API_KEY")
 if not cerebras_key:
     st.session_state.summary_output = "API key not configured. Check Streamlit Cloud secrets."
@@ -111,7 +113,8 @@ if __name__ == "__main__":
         'city', 'region', 'created_date', 'refund_count_in_15_days',]
     columns_main = ['product', 'concern_type', 'level_1_classification', 'level_2_classification']
 
-    df = pd.read_excel("for_schema_excel_sheet_v2.xlsx")
+    st.session_state.df = pd.read_excel("for_schema_excel_sheet_v2.xlsx")
+    
 
     # Streamlit Dashboard
     st.image("Frame 6.png")
@@ -126,12 +129,12 @@ if __name__ == "__main__":
         for col in columns_sidebar:
             # Get unique values, handle NaN/None, and sort
             if col == 'created_date':
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-                min_val = df[col].min()
-                max_val = df[col].max()
+                st.session_state.df[col] = pd.to_datetime(st.session_state.df[col], errors='coerce').dt.date
+                min_val = st.session_state.df[col].min()
+                max_val = st.session_state.df[col].max()
                 filters[col] = st.date_input('Date', value=(min_val, max_val), min_value=min_val, max_value=max_val)
             else:
-                unique_values = sorted(df[col].dropna().unique().tolist())
+                unique_values = sorted(st.session_state.df[col].dropna().unique().tolist())
                 options = ['None'] + unique_values
                 filters[col] = st.multiselect(f'{col}', options, default=['None'])
 
@@ -140,44 +143,44 @@ if __name__ == "__main__":
         col_1, col_2, col_3, col_4 = st.columns(4)
         with col_1:
             st.markdown("### Ticket Category")
-            unique_values = sorted(df['concern_type'].dropna().unique().tolist())
+            unique_values = sorted(st.session_state.df['concern_type'].dropna().unique().tolist())
             for value in unique_values:
-                count = len(df[df['concern_type'] == value])
+                count = len(st.session_state.df[st.session_state.df['concern_type'] == value])
                 st.write(f"{value}: {count}")
             options = ['None'] + unique_values
             st.divider()
             filters['concern_type'] = st.multiselect('Apply Filter on Ticket Type', options, default=['None'])
         with col_2:
             st.markdown("### Top 5 Products")
-            top_products = df['product'].value_counts().head(5)
+            top_products = st.session_state.df['product'].value_counts().head(5)
             for product, count in top_products.items():
                 st.markdown(f"{product}: {count}")
-            unique_values = sorted(df['product'].dropna().unique().tolist())
+            unique_values = sorted(st.session_state.df['product'].dropna().unique().tolist())
             options = ['None'] + unique_values
             st.markdown('---')
             filters['product'] = st.multiselect('Apply Filter on Product', options, default=['None'])
         with col_3:
             st.markdown("### Level-1 Ticket Categories")
-            top_cities = df['level_1_classification'].value_counts().head(3)
+            top_cities = st.session_state.df['level_1_classification'].value_counts().head(3)
             st.markdown(':blue-background[Top 3 high level concerns overall]')
             for city, count in top_cities.items():
                 st.markdown(f":red[{city}]: {count}")
-            unique_values = sorted(df['level_1_classification'].dropna().unique().tolist())
+            unique_values = sorted(st.session_state.df['level_1_classification'].dropna().unique().tolist())
             options = ['None'] + unique_values
             st.markdown('---')
             filters['level_1_classification'] = st.multiselect('Apply Filter on Level 1 Classification', options, default=['None'])
         with col_4:
             st.markdown('### Level-2 Ticket Categories')
             st.markdown(':blue-background[Top 3 low level concerns overall]')
-            top_issues = df['level_2_classification'].value_counts().head(3)
+            top_issues = st.session_state.df['level_2_classification'].value_counts().head(3)
             for issue, count in top_issues.items():
                 st.markdown(f":red[{issue}]: {count}")
-            options = ['None'] + sorted(df['level_2_classification'].dropna().unique().tolist())
+            options = ['None'] + sorted(st.session_state.df['level_2_classification'].dropna().unique().tolist())
             st.markdown('---')
             filters['level_2_classification'] = st.multiselect('Apply Filter on Level 2 Classification', options, default=['None'])
         
         # Apply filters to the DataFrame
-        st.session_state.filtered_df = df.copy()
+        st.session_state.filtered_df = st.session_state.df.copy()
         for col, value in filters.items():
             if value != ['None'] and value:  # Skip if only 'None' or empty
                 if col == 'created_date':
