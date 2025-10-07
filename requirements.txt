@@ -1,2 +1,5 @@
 dspy
 openpyxl
+chromadb
+sentence_transformers
+sk_learn
