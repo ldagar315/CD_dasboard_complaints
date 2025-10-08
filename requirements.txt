@@ -4,4 +4,3 @@ chromadb
 sentence_transformers
 scikit-learn
 gdown
-zipfile
