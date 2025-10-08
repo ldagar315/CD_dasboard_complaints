@@ -157,58 +157,56 @@ if __name__ == "__main__":
                 options = ['None'] + unique_values
                 filters[col] = st.multiselect(f'{col}', options, default=['None'])
 
-    @st.fragment
-    def filter_dataframe():
-        col_1, col_2, col_3, col_4 = st.columns(4)
-        with col_1:
-            st.markdown("### Ticket Category")
-            unique_values = sorted(st.session_state.df['concern_type'].dropna().unique().tolist())
-            for value in unique_values:
-                count = len(st.session_state.df[st.session_state.df['concern_type'] == value])
-                st.write(f"{value}: {count}")
-            options = ['None'] + unique_values
-            st.divider()
-            filters['concern_type'] = st.multiselect('Apply Filter on Ticket Type', options, default=['None'])
-        with col_2:
-            st.markdown("### Top 5 Products")
-            top_products = st.session_state.df['product'].value_counts().head(5)
-            for product, count in top_products.items():
-                st.markdown(f"{product}: {count}")
-            unique_values = sorted(st.session_state.df['product'].dropna().unique().tolist())
-            options = ['None'] + unique_values
-            st.markdown('---')
-            filters['product'] = st.multiselect('Apply Filter on Product', options, default=['None'])
-        with col_3:
-            st.markdown("### Level-1 Ticket Categories")
-            top_cities = st.session_state.df['level_1_classification'].value_counts().head(3)
-            st.markdown(':blue-background[Top 3 high level concerns overall]')
-            for city, count in top_cities.items():
-                st.markdown(f":red[{city}]: {count}")
-            unique_values = sorted(st.session_state.df['level_1_classification'].dropna().unique().tolist())
-            options = ['None'] + unique_values
-            st.markdown('---')
-            filters['level_1_classification'] = st.multiselect('Apply Filter on Level 1 Classification', options, default=['None'])
-        with col_4:
-            st.markdown('### Level-2 Ticket Categories')
-            st.markdown(':blue-background[Top 3 low level concerns overall]')
-            top_issues = st.session_state.df['level_2_classification'].value_counts().head(3)
-            for issue, count in top_issues.items():
-                st.markdown(f":red[{issue}]: {count}")
-            options = ['None'] + sorted(st.session_state.df['level_2_classification'].dropna().unique().tolist())
-            st.markdown('---')
-            filters['level_2_classification'] = st.multiselect('Apply Filter on Level 2 Classification', options, default=['None'])
-        
-        # Apply filters to the DataFrame
-        st.session_state.filtered_df = st.session_state.df.copy()
-        for col, value in filters.items():
-            if value != ['None'] and value:  # Skip if only 'None' or empty
-                if col == 'created_date':
-                    # Handle date range
-                    start_date, end_date = value
-                    st.session_state.filtered_df = st.session_state.filtered_df[(st.session_state.filtered_df[col] >= start_date) & (st.session_state.filtered_df[col] <= end_date)]
-                else:
-                    # Use isin() for multiselect values
-                    st.session_state.filtered_df = st.session_state.filtered_df[st.session_state.filtered_df[col].astype(str).isin(value)]
+    col_1, col_2, col_3, col_4 = st.columns(4)
+    with col_1:
+        st.markdown("### Ticket Category")
+        unique_values = sorted(st.session_state.df['concern_type'].dropna().unique().tolist())
+        for value in unique_values:
+            count = len(st.session_state.df[st.session_state.df['concern_type'] == value])
+            st.write(f"{value}: {count}")
+        options = ['None'] + unique_values
+        st.divider()
+        filters['concern_type'] = st.multiselect('Apply Filter on Ticket Type', options, default=['None'])
+    with col_2:
+        st.markdown("### Top 5 Products")
+        top_products = st.session_state.df['product'].value_counts().head(5)
+        for product, count in top_products.items():
+            st.markdown(f"{product}: {count}")
+        unique_values = sorted(st.session_state.df['product'].dropna().unique().tolist())
+        options = ['None'] + unique_values
+        st.markdown('---')
+        filters['product'] = st.multiselect('Apply Filter on Product', options, default=['None'])
+    with col_3:
+        st.markdown("### Level-1 Ticket Categories")
+        top_cities = st.session_state.df['level_1_classification'].value_counts().head(3)
+        st.markdown(':blue-background[Top 3 high level concerns overall]')
+        for city, count in top_cities.items():
+            st.markdown(f":red[{city}]: {count}")
+        unique_values = sorted(st.session_state.df['level_1_classification'].dropna().unique().tolist())
+        options = ['None'] + unique_values
+        st.markdown('---')
+        filters['level_1_classification'] = st.multiselect('Apply Filter on Level 1 Classification', options, default=['None'])
+    with col_4:
+        st.markdown('### Level-2 Ticket Categories')
+        st.markdown(':blue-background[Top 3 low level concerns overall]')
+        top_issues = st.session_state.df['level_2_classification'].value_counts().head(3)
+        for issue, count in top_issues.items():
+            st.markdown(f":red[{issue}]: {count}")
+        options = ['None'] + sorted(st.session_state.df['level_2_classification'].dropna().unique().tolist())
+        st.markdown('---')
+        filters['level_2_classification'] = st.multiselect('Apply Filter on Level 2 Classification', options, default=['None'])
+    
+    # Apply filters to the DataFrame
+    st.session_state.filtered_df = st.session_state.df.copy()
+    for col, value in filters.items():
+        if value != ['None'] and value:  # Skip if only 'None' or empty
+            if col == 'created_date':
+                # Handle date range
+                start_date, end_date = value
+                st.session_state.filtered_df = st.session_state.filtered_df[(st.session_state.filtered_df[col] >= start_date) & (st.session_state.filtered_df[col] <= end_date)]
+            else:
+                # Use isin() for multiselect values
+                st.session_state.filtered_df = st.session_state.filtered_df[st.session_state.filtered_df[col].astype(str).isin(value)]
 
     # Display the filtered DataFrame
     st.subheader('Filtered DataFrame')
@@ -220,29 +218,25 @@ if __name__ == "__main__":
             st.dataframe(st.session_state.filtered_df, width= 'stretch')
             status.update(label = "Data loaded.", expanded=True)
 
-    @st.fragment
-    def summary():
-        st.markdown("---")
-        st.markdown("## Ticket Summary")
-        tickets = []  
-        user_selection = st.segmented_control(label="Provide Summary for", options=["Entire Ticket", "Why did the customer reach out ?", "Resolution Provided","Root Causes"], key="action_control")
-        if user_selection == "Entire Ticket":
-            st.session_state.tickets = st.session_state.filtered_df['expanded_description'].dropna().tolist()
-            st.session_state.collection_name = "Expanded_Description_Collection"
-        elif user_selection == "Why did the customer reach out ?":
-            st.session_state.tickets = st.session_state.filtered_df['customer_issue'].dropna().tolist()
-            st.session_state.collection_name = "Customer_Issue_Collection"
-        elif user_selection == "Resolution Provided":
-            st.session_state.tickets = st.session_state.filtered_df['resolution_provided_summary'].dropna().tolist()
-            st.session_state.collection_name = "Resolution_Provided_Collection"
-        elif user_selection == "Root Causes":
-            st.session_state.tickets = st.session_state.filtered_df['root_cause'].dropna().tolist()
-            st.session_state.collection_name = "Root_Cause_Collection"
-        st.button('Summarise', on_click = summarise_ticket)
-        with st.status("Preparing summary...", expanded=False) as status_summary:
-            status_summary.update(label = "Generating summary...", expanded=False)
-            st.markdown(st.session_state.summary_output)
-            status_summary.update(label = "Summary ready.", expanded=True)
-    filter_dataframe()
-    summary()
+    st.markdown("---")
+    st.markdown("## Ticket Summary")
+    tickets = []  
+    user_selection = st.segmented_control(label="Provide Summary for", options=["Entire Ticket", "Why did the customer reach out ?", "Resolution Provided","Root Causes"], key="action_control")
+    if user_selection == "Entire Ticket":
+        st.session_state.tickets = st.session_state.filtered_df['expanded_description'].dropna().tolist()
+        st.session_state.collection_name = "Expanded_Description_Collection"
+    elif user_selection == "Why did the customer reach out ?":
+        st.session_state.tickets = st.session_state.filtered_df['customer_issue'].dropna().tolist()
+        st.session_state.collection_name = "Customer_Issue_Collection"
+    elif user_selection == "Resolution Provided":
+        st.session_state.tickets = st.session_state.filtered_df['resolution_provided_summary'].dropna().tolist()
+        st.session_state.collection_name = "Resolution_Provided_Collection"
+    elif user_selection == "Root Causes":
+        st.session_state.tickets = st.session_state.filtered_df['root_cause'].dropna().tolist()
+        st.session_state.collection_name = "Root_Cause_Collection"
+    st.button('Summarise', on_click = summarise_ticket)
+    with st.status("Preparing summary...", expanded=False) as status_summary:
+        status_summary.update(label = "Generating summary...", expanded=False)
+        st.markdown(st.session_state.summary_output)
+        status_summary.update(label = "Summary ready.", expanded=True)
 
