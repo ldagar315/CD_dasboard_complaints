@@ -8,7 +8,17 @@ import chromadb
 from sklearn.decomposition import PCA
 from sentence_transformers import SentenceTransformer
 import uuid
+import gdown
+import zipfile
+import datetime
 
+# check if vector_db folder exists, if not create it
+if not os.path.exists("VectorDB"):
+    os.makedirs("VectorDB")
+# Download Vector DB files
+today_date = datetime.date.today()
+
+    
 if 'summary_output' not in st.session_state:
     st.session_state.summary_output = ""
 if 'tickets' not in st.session_state:
@@ -24,50 +34,39 @@ if not cerebras_key:
     st.session_state.summary_output = "API key not configured. Check Streamlit Cloud secrets."
 
 def summarise_tickets_second():
-
-    DB_path = "Streamlit_Interface_db"
+    DB_path = "VectorDB"
     complaint_number = st.session_state.filtered_df['complaint_number'].dropna().tolist()
     COLLECTION_NAME = st.session_state.collection_name
     chroma_client = chromadb.PersistentClient(path = DB_path)
     collection_client = chroma_client.get_or_create_collection(name = COLLECTION_NAME)
     # print(collection_client.count())
 
-    embeddings = collection_client.get(where = {"COMPLAINT_NUMBER": {'$in' : complaint_number}}, include = ["embeddings", "metadatas", "documents"])
+    try:
+        embeddings = collection_client.get(where = {"COMPLAINT_NUMBER": {'$in' : complaint_number}}, include = ["embeddings", "metadatas", "documents"])
+        num_components = int(min(len(embeddings['ids']), 25))
+        pca = PCA(n_components = num_components)
+        embeddings_array = np.array(embeddings['embeddings'])
+        embeddings_pca = pca.fit_transform(embeddings_array)
+        extreme_indices = set()
+        for i in range(num_components):
+            component_scores = embeddings_pca[:, i]
+            min_idx = np.argmin(component_scores)
+            max_idx = np.argmax(component_scores)
+            extreme_indices.add(min_idx)
+            extreme_indices.add(max_idx)
+            #print(f"PC-{i+1}: Min Index={min_idx}, Max Index={max_idx}")
 
-    num_components = int(min(len(embeddings['ids']), 25))
-    # print(f"Applying PCA Analysis to find {num_components} principal components")
-
-
-    pca = PCA(n_components = num_components)
-    embeddings_array = np.array(embeddings['embeddings'])
-
-
-    embeddings_pca = pca.fit_transform(embeddings_array)
-    #print(f"Shape of transformed data: {embeddings_pca.shape}")
-
-    #print("--- 3. Finding Extreme Points ---")
-    extreme_indices = set()
-
-    for i in range(num_components):
-        component_scores = embeddings_pca[:, i]
-
-        min_idx = np.argmin(component_scores)
-        max_idx = np.argmax(component_scores)
-
-        extreme_indices.add(min_idx)
-        extreme_indices.add(max_idx)
-    
-        print(f"PC-{i+1}: Min Index={min_idx}, Max Index={max_idx}")
-
-    final_indices = sorted(list(extreme_indices))
-
-    all_ids = embeddings['ids']
-    extreme_ids = [all_ids[i] for i in final_indices]
-    extreme_documents = collection_client.get(ids = extreme_ids, include = ["documents"])
-    # print(f"Extreme Documents : {extreme_documents['documents']}")
-    st.session_state.tickets =  extreme_documents['documents']
+        final_indices = sorted(list(extreme_indices))
+        all_ids = embeddings['ids']
+        extreme_ids = [all_ids[i] for i in final_indices]
+        extreme_documents = collection_client.get(ids = extreme_ids, include = ["documents"])
+        # print(f"Extreme Documents : {extreme_documents['documents']}")
+        st.session_state.tickets =  extreme_documents['documents']
+    except Exception as e:
+        print(f"Error during PCA summarization: {str(e)}")
 # DSPy context for summarise_ticket
 def summarise_ticket():
+    summarise_tickets_second()
     tickets = st.session_state.tickets[:20]  # Limit to first 20 tickets
     if not tickets:
         st.session_state.summary_output = "No tickets selected for summary."
@@ -114,6 +113,15 @@ if __name__ == "__main__":
     columns_main = ['product', 'concern_type', 'level_1_classification', 'level_2_classification']
 
     st.session_state.df = pd.read_excel("for_schema_excel_sheet_v2.xlsx")
+    latest_date_in_data = st.session_state.df['created_date'].max()
+    if today_date > latest_date_in_data:
+        url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
+        gdown.download_folder(url)
+        zip_file_path = 'MASTER CHROMADB READ ONLY\\master_chromadb.zip'
+        with zipfile.ZipFile(zip_file_path, 'r') as zf:
+            extract_to_directory = 'VectorDB'
+            zf.extractall(extract_to_directory)
+        
     
 
     # Streamlit Dashboard
