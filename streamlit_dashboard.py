@@ -124,6 +124,7 @@ if __name__ == "__main__":
         'customer_issue', 'root_cause', 'resolution_provided_summary']
     st.session_state.df = df[column_names]
     latest_date_in_data = st.session_state.df['created_date'].max()
+    latest_date_in_data = datetime.datetime.strptime(latest_date_in_data, '%Y-%m-%d %H:%M:%S').date()
     if today_date > latest_date_in_data:
         url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
         gdown.download_folder(url)
