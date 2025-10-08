@@ -127,10 +127,8 @@ if __name__ == "__main__":
     latest_date_in_data = datetime.datetime.strptime(latest_date_in_data, '%Y-%m-%d %H:%M:%S').date()
     if today_date > latest_date_in_data:
         url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
-        gdown.download_folder(url)
-        zip_file_name = 'master_chromadb.zip'
-        output_dir = 'VectorDB'
-        zip_file_path = os.path.join(output_dir, zip_file_name)
+        result = gdown.download_folder(url)
+        zip_file_path = result[0]
         with zipfile.ZipFile(zip_file_path, 'r') as zf:
             extract_to_directory = 'VectorDB'
             zf.extractall(extract_to_directory)
