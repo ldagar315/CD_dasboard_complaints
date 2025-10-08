@@ -119,7 +119,7 @@ if __name__ == "__main__":
     df.columns = [c.strip() for c in df.columns]
     # Schema context
     column_names = [
-        'customer_id', 'city', 'region', 'created_date', 'refund_count_in_15_days', 'product',
+        'complaint_number', 'city', 'region', 'created_date', 'refund_count_in_15_days', 'product',
         'concern_type', 'level_1_classification', 'level_2_classification', 'expanded_description',
         'customer_issue', 'root_cause', 'resolution_provided_summary']
     st.session_state.df = df[column_names]
