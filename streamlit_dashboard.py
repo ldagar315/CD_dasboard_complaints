@@ -128,7 +128,7 @@ if __name__ == "__main__":
     if today_date > latest_date_in_data:
         url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
         gdown.download_folder(url)
-        zip_file_path = 'MASTER CHROMADB READ ONLY\\master_chromadb.zip'
+        zip_file_path = 'src/cd_dasboard_complaints/MASTER CHROMADB READ ONLY/master_chromadb.zip'
         with zipfile.ZipFile(zip_file_path, 'r') as zf:
             extract_to_directory = 'VectorDB'
             zf.extractall(extract_to_directory)
