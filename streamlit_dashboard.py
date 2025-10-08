@@ -112,7 +112,17 @@ if __name__ == "__main__":
         'city', 'region', 'created_date', 'refund_count_in_15_days',]
     columns_main = ['product', 'concern_type', 'level_1_classification', 'level_2_classification']
 
-    st.session_state.df = pd.read_csv('https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv&gid=1442482136')
+    df = pd.read_csv('https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv')
+    df = df[df['CONCERN AREA NAME'] != 'Stop Customer']
+    df = df[df['CONCERN TYPE NAME'] != 'Internal']
+    df = df.rename(columns=lambda x: x.strip().replace(" ", "_").lower())
+    df.columns = [c.strip() for c in df.columns]
+    # Schema context
+    column_names = [
+        'customer_id', 'city', 'region', 'created_date', 'refund_count_in_15_days', 'product',
+        'concern_type', 'level_1_classification', 'level_2_classification', 'expanded_description',
+        'customer_issue', 'root_cause', 'resolution_provided_summary']
+    st.session_state.df = df[column_names]
     latest_date_in_data = st.session_state.df['created_date'].max()
     if today_date > latest_date_in_data:
         url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
