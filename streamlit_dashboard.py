@@ -1,16 +1,194 @@
 import streamlit as st
 import pandas as pd
 import dspy
-from typing import List, Literal
+from typing import List, Optional
 import os
-import numpy as np
 import chromadb
 from sklearn.decomposition import PCA
 from sentence_transformers import SentenceTransformer
-import uuid
 import gdown
 import zipfile
 import datetime
+import plotly.express as px
+import numpy as np
+
+try:
+    from streamlit_theme import st_theme
+except ImportError:
+    st_theme = None
+
+DATA_URL = "https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv"
+
+THEME_COLORS = {
+    "light": {
+        "primary_text": "#1F2A44",
+        "secondary_text": "#5C6C83",
+        "accent_color": "#FF7633",
+        "surface": "#F6F8FC",
+        "card_surface": "#FFFFFF",
+        "card_border": "#E7ECF3",
+        "card_shadow": "0px 4px 12px rgba(31, 42, 68, 0.06)",
+        "divider": "rgba(31, 42, 68, 0.1)",
+    },
+    "dark": {
+        "primary_text": "#F3F4F6",
+        "secondary_text": "#9CA3AF",
+        "accent_color": "#FF8B4D",
+        "surface": "#0F172A",
+        "card_surface": "#1E293B",
+        "card_border": "#26334C",
+        "card_shadow": "0px 12px 24px rgba(3, 7, 18, 0.55)",
+        "divider": "rgba(148, 163, 184, 0.25)",
+    },
+}
+
+def detect_base_theme() -> str:
+    """Return 'dark' or 'light' depending on the current browser theme."""
+    if not st_theme:
+        return "light"
+    try:
+        theme_info = st_theme()
+    except Exception:
+        return "light"
+    base = theme_info.get("base") if isinstance(theme_info, dict) else None
+    return "dark" if base and base.lower().startswith("dark") else "light"
+
+
+def build_page_style(palette: dict, base: str) -> str:
+    """Generate CSS using the palette detected from the browser theme."""
+    return f"""
+<style>
+    :root {{
+        color-scheme: {base};
+        --primary-text: {palette["primary_text"]};
+        --secondary-text: {palette["secondary_text"]};
+        --accent-color: {palette["accent_color"]};
+        --surface-color: {palette["surface"]};
+        --card-surface: {palette["card_surface"]};
+        --card-border: {palette["card_border"]};
+        --card-shadow: {palette["card_shadow"]};
+        --divider-color: {palette["divider"]};
+    }}
+    body {{
+        background-color: var(--surface-color);
+    }}
+    .main .block-container {{
+        padding-top: 2.5rem;
+        padding-bottom: 3rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+        background-color: var(--surface-color);
+        transition: background-color 0.3s ease;
+    }}
+    .dashboard-title {{
+        font-size: 2.4rem;
+        font-weight: 700;
+        color: var(--primary-text);
+        margin-bottom: 0.5rem;
+    }}
+    .dashboard-subtitle {{
+        color: var(--secondary-text);
+        font-size: 1rem;
+        margin-bottom: 2rem;
+    }}
+    .section-divider {{
+        margin: 2.25rem 0 1.75rem 0;
+        border: none;
+        border-top: 1px solid var(--divider-color);
+    }}
+    .section-heading {{
+        font-size: 1.3rem;
+        font-weight: 600;
+        color: var(--primary-text);
+        margin-bottom: 0.35rem;
+    }}
+    .section-caption {{
+        font-size: 0.9rem;
+        color: var(--secondary-text);
+        margin-bottom: 1rem;
+    }}
+    .kpi-card {{
+        background-color: var(--card-surface);
+        padding: 1rem 1.2rem;
+        border-radius: 0.9rem;
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        min-height: 120px;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }}
+    .kpi-label {{
+        display: block;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--secondary-text);
+    }}
+    .kpi-value {{
+        display: block;
+        margin-top: 0.5rem;
+        font-size: 1.9rem;
+        font-weight: 700;
+        color: var(--primary-text);
+    }}
+    .filter-grid {{
+        background-color: var(--card-surface);
+        padding: 1.5rem 1.75rem;
+        border-radius: 1rem;
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+    }}
+    .stMultiSelect label, .stDateInput label {{
+        font-weight: 600 !important;
+        color: var(--primary-text) !important;
+    }}
+    .stMultiSelect div[data-baseweb="select"],
+    .stDateInput div[data-baseweb="input"] {{
+        border-radius: 0.6rem;
+        background-color: var(--card-surface);
+        border: 1px solid var(--card-border);
+        color: var(--primary-text);
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }}
+    .stMultiSelect div[data-baseweb="select"] span,
+    .stDateInput div[data-baseweb="input"] span {{
+        color: var(--primary-text);
+    }}
+    .stDataFrame {{
+        border-radius: 0.9rem;
+        overflow: hidden;
+        border: 1px solid var(--card-border);
+    }}
+    .stButton button {{
+        background: var(--accent-color);
+        color: #FFFFFF;
+        border: none;
+        border-radius: 0.6rem;
+        padding: 0.55rem 1.2rem;
+        font-weight: 600;
+        transition: filter 0.2s ease, transform 0.2s ease;
+    }}
+    .stButton button:hover {{
+        filter: brightness(1.05);
+        transform: translateY(-1px);
+    }}
+</style>
+"""
+
+COLUMN_NAMES = [
+    "complaint_number",
+    "city",
+    "region",
+    "created_date",
+    "refund_count_in_15_days",
+    "product",
+    "concern_type",
+    "level_1_classification",
+    "level_2_classification",
+    "expanded_description",
+    "customer_issue",
+    "root_cause",
+    "resolution_provided_summary",
+]
 
 # check if vector_db folder exists, if not create it
 if not os.path.exists("VectorDB"):
@@ -29,10 +207,77 @@ if 'filtered_df' not in st.session_state:
     st.session_state.filtered_df = pd.DataFrame()
 if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame()
+if 'vector_db_initialized' not in st.session_state:
+    st.session_state.vector_db_initialized = False
 cerebras_key = st.secrets.get("CEREBRAS_API_KEY")
 if not cerebras_key:
     st.session_state.summary_output = "API key not configured. Check Streamlit Cloud secrets."
+    
+# Define DSPy signature for summarising tickets
+class SummariseTicket(dspy.Signature):
+    action: List[str] = dspy.InputField(desc="The list of tickets to be summarised")
+    ticket_summary: str = dspy.OutputField(
+        desc="""A short concise analytical summary of the tickets provided. 
+                Answer in Points, structured format
+                Answer in Markdown format"""
+    )
+    key_insights: str = dspy.OutputField(
+        desc="""Key insights from the tickets provided. 
+                Answer in Points, structured format
+                Answer in Markdown format"""
+    )
+summarise = dspy.ChainOfThought(SummariseTicket)
 
+class FinalSummary(dspy.Signature):
+    segregated_summary: str = dspy.InputField(desc="The combined summaries from multiple models")
+    integrated_summary: str = dspy.OutputField(
+        desc="""A concise summary of the key insights from the combined summaries provided. 
+                Answer in Points, structured format
+                Answer in Markdown format"""
+    )
+final_summarise = dspy.ChainOfThought(FinalSummary)
+
+# DSPy context for summarise_ticket
+import os
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import streamlit as st
+import dspy
+
+MODELS = ["openai/gpt-oss-120b", "openai/qwen-3-235b-a22b-instruct-2507", "openai/llama-4-maverick-17b-128e-instruct", "openai/qwen-3-32b", "openai/llama-4-scout-17b-16e-instruct"]
+
+def _chunk_equally(xs, n):
+    k = math.ceil(len(xs) / n) if xs else 0
+    return [xs[i:i+k] for i in range(0, len(xs), k)] if k else [[] for _ in range(n)]
+
+def _run_model_summary(model_name, tickets_chunk):
+    if not tickets_chunk:
+        return model_name, ""
+    with dspy.context(
+        lm=dspy.LM(
+            model=model_name,
+            api_key=os.getenv("CEREBRAS_API_KEY"),
+            api_base="https://api.cerebras.ai/v1",
+        ),
+        cache=True,
+    ):
+        s = summarise(action=tickets_chunk)
+        text = (
+            f"— Summary\n{s.ticket_summary}\n\n"
+            f"— Key Insights\n{s.key_insights}\n"
+        )
+        return model_name, text
+    
+def final_summary(combined_text):
+    with dspy.context(
+        lm=dspy.LM(
+            model="openai/llama-4-maverick-17b-128e-instruct",
+            api_key=os.getenv("CEREBRAS_API_KEY"),
+            api_base="https://api.cerebras.ai/v1",
+        ),
+    ):
+        s = final_summarise(segregated_summary=combined_text)
+        return s.integrated_summary
 def summarise_tickets_second():
     DB_path = "VectorDB"
     complaint_number = st.session_state.filtered_df['complaint_number'].dropna().tolist()
@@ -43,7 +288,7 @@ def summarise_tickets_second():
 
     try:
         embeddings = collection_client.get(where = {"COMPLAINT_NUMBER": {'$in' : complaint_number}}, include = ["embeddings", "metadatas", "documents"])
-        num_components = int(min(len(embeddings['ids']), 25))
+        num_components = int(min(len(embeddings['ids']), 100))
         pca = PCA(n_components = num_components)
         embeddings_array = np.array(embeddings['embeddings'])
         embeddings_pca = pca.fit_transform(embeddings_array)
@@ -64,179 +309,329 @@ def summarise_tickets_second():
         st.session_state.tickets =  extreme_documents['documents']
     except Exception as e:
         print(f"Error during PCA summarization: {str(e)}")
-# DSPy context for summarise_ticket
 def summarise_ticket():
-    summarise_tickets_second()
-    tickets = st.session_state.tickets[:20]  # Limit to first 20 tickets
+    if len(st.session_state.tickets) > 100:
+        summarise_tickets_second()
+    tickets = st.session_state.tickets[:100]
     if not tickets:
         st.session_state.summary_output = "No tickets selected for summary."
         return
-    
-    with dspy.context(
-        lm=dspy.LM(
-            model="openai/gpt-oss-120b",
-            api_key= os.getenv("CEREBRAS_API_KEY"),
-            api_base="https://api.cerebras.ai/v1"
-        ),
-        cache=True
-    ):
-        class SummariseTicket(dspy.Signature):
-            action: List[str] = dspy.InputField(desc="The list of tickets to be summarised")
-            ticket_summary: str = dspy.OutputField(
-                desc="""A short concise analytical summary of the tickets provided. 
-                     Answer in Points, structured format
-                     Answer in Markdown format"""
-            )
-            key_insights: str = dspy.OutputField(
-                desc="""Key insights from the tickets provided. 
-                     Answer in Points, structured format
-                     Answer in Markdown format"""
-            )
-        summarise = dspy.ChainOfThought(SummariseTicket)
-        try:
-            summary = summarise(action=tickets)
-            summary_temp = f"### :orange[Summary]:\n{summary.ticket_summary}\n\n### :orange[Key Insights]:\n{summary.key_insights}"
-            st.session_state.summary_output = summary_temp
-        except Exception as e:
-            st.session_state.summary_output = f"Error generating summary: {str(e)}"
+
+    # Divide tickets into 5 chunks (as equal as possible)
+    chunks = _chunk_equally(tickets, 5)
+    # Ensure exactly five buckets for the five models
+    if len(chunks) < 5:
+        chunks += [[] for _ in range(5 - len(chunks))]
+    elif len(chunks) > 5:
+        chunks = chunks[:5]
+
+    results = {}
+    try:
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futures = {
+                ex.submit(_run_model_summary, model, chunk): model
+                for model, chunk in zip(MODELS, chunks)
+            }
+            for fut in as_completed(futures):
+                model = futures[fut]
+                try:
+                    m, text = fut.result()
+                    results[m] = text
+                except Exception as e:
+                    results[model] = f"### {model} — Error\n{str(e)}\n"
+
+        # Stable order by MODELS
+        combined = "\n\n".join(results.get(m, "") for m in MODELS)
+
+        # One final aggregation call
+        final_insights = final_summary(combined)
+
+        st.session_state.summary_output = final_insights
+    except Exception as e:
+        st.session_state.summary_output = f"Error generating summary: {str(e)}"
+
+
+
+@st.cache_data(show_spinner=False)
+def load_ticket_dataframe(url: str) -> pd.DataFrame:
+    df = pd.read_csv(url)
+    df = df[df["CONCERN AREA NAME"] != "Stop Customer"]
+    df = df[df["CONCERN TYPE NAME"] != "Internal"]
+    df = df.rename(columns=lambda x: x.strip().replace(" ", "_").lower())
+    df.columns = [c.strip() for c in df.columns]
+    df = df[COLUMN_NAMES]
+    df["created_date"] = pd.to_datetime(df["created_date"], errors="coerce").dt.date
+    return df
+
+
+def apply_selected_filters(df: pd.DataFrame, selections: dict, exclude: Optional[str] = None) -> pd.DataFrame:
+    filtered = df
+    date_range = selections.get("created_date")
+    if exclude != "created_date" and isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        start_date, end_date = date_range
+        if start_date and end_date:
+            filtered = filtered[
+                (filtered["created_date"] >= start_date) & (filtered["created_date"] <= end_date)
+            ]
+    for col, selected_values in selections.items():
+        if col == "created_date" or col == exclude or not selected_values:
+            continue
+        filtered = filtered[filtered[col].isin(selected_values)]
+    return filtered
+
+
+def get_available_options(df: pd.DataFrame, selections: dict, target_col: str) -> List:
+    subset = apply_selected_filters(df, selections, exclude=target_col)
+    return sorted(subset[target_col].dropna().unique().tolist())
+
+
+def ensure_multiselect_state(key: str, options: List) -> None:
+    current = st.session_state.get(key, [])
+    if not isinstance(current, list):
+        current = [current]
+    valid = [value for value in current if value in options]
+    if key not in st.session_state or len(valid) != len(current):
+        st.session_state[key] = valid
+
+
+def render_section_header(title: str, caption: Optional[str] = None) -> None:
+    st.markdown(f"<div class='section-heading'>{title}</div>", unsafe_allow_html=True)
+    if caption:
+        st.markdown(f"<div class='section-caption'>{caption}</div>", unsafe_allow_html=True)
+
+
+def render_section_divider() -> None:
+    st.markdown("<hr class='section-divider' />", unsafe_allow_html=True)
+
+
+def render_kpi_cards(df: pd.DataFrame, title: str, caption: Optional[str] = None) -> None:
+    render_section_header(title, caption)
+    if df.empty:
+        st.info("No tickets available for this view yet.")
+        return
+    metrics = [
+        ("Tickets", len(df)),
+        ("Unique Products", df["product"].nunique()),
+        ("Concern Types", df["concern_type"].nunique()),
+        ("Cities", df["city"].nunique()),
+    ]
+    columns = st.columns(len(metrics))
+    for column, (label, value) in zip(columns, metrics):
+        column.markdown(
+            f"""
+            <div class="kpi-card">
+                <span class="kpi-label">{label}</span>
+                <span class="kpi-value">{value:,}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 
 if __name__ == "__main__":
 
-    st.set_page_config(layout="wide")
+    base_theme = detect_base_theme()
+    palette = THEME_COLORS.get(base_theme, THEME_COLORS["light"])
+    st.set_page_config(layout="wide", page_title="Customer Support Tickets")
+    st.markdown(build_page_style(palette, base_theme), unsafe_allow_html=True)
+    logo_path = "Frame 6.png"
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=220)
+    st.markdown(
+        "<div class='dashboard-title'>Customer Support Insights</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='dashboard-subtitle'>Monitor complaint trends, surface hotspots, and summarise customer conversations in seconds.</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Adaptive styling applied for {base_theme.capitalize()} mode.")
 
-    # Load your actual DataFrame here. Replace with your loading logic.
-    # Example: df = pd.read_excel('path_to_your_file.xlsx')
-    # For demonstration, using a sample based on your schema.
-    columns_sidebar = [
-        'city', 'region', 'created_date', 'refund_count_in_15_days',]
-    columns_main = ['product', 'concern_type', 'level_1_classification', 'level_2_classification']
+    st.session_state.df = load_ticket_dataframe(DATA_URL)
+    df = st.session_state.df
+    if not st.session_state.vector_db_initialized:
+        latest_date_in_data = df["created_date"].max()
+        if pd.notna(latest_date_in_data) and today_date > latest_date_in_data:
+            url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ'
+            result = gdown.download_folder(url)
+            zip_file_path = result[0]
+            with zipfile.ZipFile(zip_file_path, 'r') as zf:
+                extract_to_directory = 'VectorDB'
+                zf.extractall(extract_to_directory)
+        st.session_state.vector_db_initialized = True
 
-    df = pd.read_csv('https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv')
-    df = df[df['CONCERN AREA NAME'] != 'Stop Customer']
-    df = df[df['CONCERN TYPE NAME'] != 'Internal']
-    df = df.rename(columns=lambda x: x.strip().replace(" ", "_").lower())
-    df.columns = [c.strip() for c in df.columns]
-    # Schema context
-    column_names = [
-        'complaint_number', 'city', 'region', 'created_date', 'refund_count_in_15_days', 'product',
-        'concern_type', 'level_1_classification', 'level_2_classification', 'expanded_description',
-        'customer_issue', 'root_cause', 'resolution_provided_summary']
-    st.session_state.df = df[column_names]
-    latest_date_in_data = st.session_state.df['created_date'].max()
-    latest_date_in_data = datetime.datetime.strptime(latest_date_in_data, '%Y-%m-%d %H:%M:%S').date()
-    if today_date > latest_date_in_data:
-        url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ' 
-        result = gdown.download_folder(url)
-        zip_file_path = result[0]
-        with zipfile.ZipFile(zip_file_path, 'r') as zf:
-            extract_to_directory = 'VectorDB'
-            zf.extractall(extract_to_directory)
-        
-    
+    render_kpi_cards(
+        df,
+        "Tickets At A Glance",
+        "Aggregated counts across the full dataset.",
+    )
 
-    # Streamlit Dashboard
-    st.image("Frame 6.png")
-    st.title('Customer Support Tickets Dashboard')
+    render_section_divider()
+    render_section_header(
+        "Overall Ticket Distribution",
+        "Understand how tickets break down before applying any filters.",
+    )
 
-    st.write("Select filters from the dropdowns below to narrow down the data. 'None' means no filter on that column.")
-
-    # Create a sidebar for filters
-    with st.sidebar:
-        st.header('Filters')
-        filters = {}
-        for col in columns_sidebar:
-            # Get unique values, handle NaN/None, and sort
-            if col == 'created_date':
-                st.session_state.df[col] = pd.to_datetime(st.session_state.df[col], errors='coerce').dt.date
-                min_val = st.session_state.df[col].min()
-                max_val = st.session_state.df[col].max()
-                filters[col] = st.date_input('Date', value=(min_val, max_val), min_value=min_val, max_value=max_val)
-            else:
-                unique_values = sorted(st.session_state.df[col].dropna().unique().tolist())
-                options = ['None'] + unique_values
-                filters[col] = st.multiselect(f'{col}', options, default=['None'])
-
-    col_1, col_2, col_3, col_4 = st.columns(4)
+    col_1, col_2, col_3 = st.columns(3)
     with col_1:
-        st.markdown("### Ticket Category")
-        unique_values = sorted(st.session_state.df['concern_type'].dropna().unique().tolist())
-        for value in unique_values:
-            count = len(st.session_state.df[st.session_state.df['concern_type'] == value])
-            st.write(f"{value}: {count}")
-        options = ['None'] + unique_values
-        st.divider()
-        filters['concern_type'] = st.multiselect('Apply Filter on Ticket Type', options, default=['None'])
+        st.markdown("**Concern Type Mix**")
+        concern_counts = df['concern_type'].value_counts().reset_index()
+        concern_counts.columns = ['Concern Type', 'Count']
+        fig = px.pie(concern_counts, values='Count', names='Concern Type')
+        st.plotly_chart(fig, key="concern_type", width = 'content')
     with col_2:
-        st.markdown("### Top 5 Products")
-        top_products = st.session_state.df['product'].value_counts().head(5)
-        for product, count in top_products.items():
-            st.markdown(f"{product}: {count}")
-        unique_values = sorted(st.session_state.df['product'].dropna().unique().tolist())
-        options = ['None'] + unique_values
-        st.markdown('---')
-        filters['product'] = st.multiselect('Apply Filter on Product', options, default=['None'])
+        st.markdown("**Tickets by Region**")
+        region_counts = df['region'].value_counts().reset_index()
+        region_counts.columns = ['Region', 'Count']
+        fig = px.pie(region_counts, values='Count', names='Region')
+        st.plotly_chart(fig, key="region", width = 'content')
     with col_3:
-        st.markdown("### Level-1 Ticket Categories")
-        top_cities = st.session_state.df['level_1_classification'].value_counts().head(3)
-        st.markdown(':blue-background[Top 3 high level concerns overall]')
-        for city, count in top_cities.items():
-            st.markdown(f":red[{city}]: {count}")
-        unique_values = sorted(st.session_state.df['level_1_classification'].dropna().unique().tolist())
-        options = ['None'] + unique_values
-        st.markdown('---')
-        filters['level_1_classification'] = st.multiselect('Apply Filter on Level 1 Classification', options, default=['None'])
+        st.markdown("**Level 1 Categories**")
+        level1_counts = df['level_1_classification'].value_counts().reset_index()
+        level1_counts.columns = ['Level 1 Category', 'Count']
+        fig = px.pie(level1_counts, values='Count', names='Level 1 Category')
+        st.plotly_chart(fig, key="level_1", width = 'content')
+
+    col_4, col_5, col_6 = st.columns(3)
     with col_4:
-        st.markdown('### Level-2 Ticket Categories')
-        st.markdown(':blue-background[Top 3 low level concerns overall]')
-        top_issues = st.session_state.df['level_2_classification'].value_counts().head(3)
-        for issue, count in top_issues.items():
-            st.markdown(f":red[{issue}]: {count}")
-        options = ['None'] + sorted(st.session_state.df['level_2_classification'].dropna().unique().tolist())
-        st.markdown('---')
-        filters['level_2_classification'] = st.multiselect('Apply Filter on Level 2 Classification', options, default=['None'])
-    
-    # Apply filters to the DataFrame
-    st.session_state.filtered_df = st.session_state.df.copy()
-    for col, value in filters.items():
-        if value != ['None'] and value:  # Skip if only 'None' or empty
-            if col == 'created_date':
-                # Handle date range
-                start_date, end_date = value
-                st.session_state.filtered_df = st.session_state.filtered_df[(st.session_state.filtered_df[col] >= start_date) & (st.session_state.filtered_df[col] <= end_date)]
-            else:
-                # Use isin() for multiselect values
-                st.session_state.filtered_df = st.session_state.filtered_df[st.session_state.filtered_df[col].astype(str).isin(value)]
+        st.markdown("**Level 2 Focus Areas**")
+        level2_counts = df['level_2_classification'].value_counts().head(10)
+        st.bar_chart(level2_counts, horizontal=True, x_label='Count', y_label='Issue', width = 'content')
+    with col_5:
+        st.markdown("**Top Products**")
+        product_counts = df['product'].value_counts().head(10)
+        st.bar_chart(product_counts, horizontal=True, x_label='Count', y_label='Product', width = 'content')
+    with col_6:
+        st.markdown("**Tickets by City**")
+        city_counts = df['city'].value_counts().head(10)
+        st.bar_chart(city_counts, horizontal=True, x_label='Count', y_label='City', width = 'content')
 
-    # Display the filtered DataFrame
-    st.subheader('Filtered DataFrame')
-    st.write(f"Total rows after filtering: {len(st.session_state.filtered_df)}")
-    if st.session_state.filtered_df.empty:
-        st.write("No data matches the filters. Try adjusting them.")
+    render_section_divider()
+    render_section_header(
+        "Filter Tickets",
+        "Combine filters to narrow the analysis. Options update based on your selections.",
+    )
+
+    min_val = df['created_date'].min()
+    max_val = df['created_date'].max()
+    if pd.isna(min_val) or pd.isna(max_val):
+        min_val = max_val = today_date
+    date_column, _ = st.columns([1.2, 1.8])
+    with date_column:
+        date_range_selection = st.date_input(
+            label="Date Range",
+            value=(min_val, max_val),
+            min_value=min_val,
+            max_value=max_val,
+            key="filter_created_date",
+        )
+    if isinstance(date_range_selection, (list, tuple)) and len(date_range_selection) == 2:
+        start_date, end_date = date_range_selection
     else:
-        with st.status("Loading filtered data...", expanded=False) as status:
-            st.dataframe(st.session_state.filtered_df, width= 'stretch')
-            status.update(label = "Data loaded.", expanded=True)
+        start_date = end_date = date_range_selection
+    selected_filters = {"created_date": (start_date, end_date)}
 
-    st.markdown("---")
-    st.markdown("## Ticket Summary")
-    tickets = []  
-    user_selection = st.segmented_control(label="Provide Summary for", options=["Entire Ticket", "Why did the customer reach out ?", "Resolution Provided","Root Causes"], key="action_control")
-    if user_selection == "Entire Ticket":
-        st.session_state.tickets = st.session_state.filtered_df['expanded_description'].dropna().tolist()
-        st.session_state.collection_name = "Expanded_Description_Collection"
-    elif user_selection == "Why did the customer reach out ?":
-        st.session_state.tickets = st.session_state.filtered_df['customer_issue'].dropna().tolist()
-        st.session_state.collection_name = "Customer_Issue_Collection"
-    elif user_selection == "Resolution Provided":
-        st.session_state.tickets = st.session_state.filtered_df['resolution_provided_summary'].dropna().tolist()
-        st.session_state.collection_name = "Resolution_Provided_Collection"
-    elif user_selection == "Root Causes":
-        st.session_state.tickets = st.session_state.filtered_df['root_cause'].dropna().tolist()
-        st.session_state.collection_name = "Root_Cause_Collection"
-    st.button('Summarise', on_click = summarise_ticket)
-    with st.status("Preparing summary...", expanded=False) as status_summary:
-        status_summary.update(label = "Generating summary...", expanded=False)
-        st.markdown(st.session_state.summary_output)
-        status_summary.update(label = "Summary ready.", expanded=True)
+    filter_config = [
+        ("concern_type", "Concern Type", "filter_concern_type"),
+        ("region", "Region", "filter_region"),
+        ("level_1_classification", "Level 1 Classification", "filter_level_1"),
+        ("level_2_classification", "Level 2 Classification", "filter_level_2"),
+        ("product", "Product", "filter_product"),
+        ("city", "City", "filter_city"),
+    ]
 
+    filter_rows = [st.columns(3), st.columns(3)]
+    for index, (column_name, label, key) in enumerate(filter_config):
+        row = index // 3
+        column_index = index % 3
+        with filter_rows[row][column_index]:
+            options = get_available_options(df, selected_filters, column_name)
+            ensure_multiselect_state(key, options)
+            selected_filters[column_name] = st.multiselect(label, options, key=key)
+
+    st.session_state.filtered_df = apply_selected_filters(df, selected_filters).copy()
+    filtered_df = st.session_state.filtered_df
+
+    render_section_divider()
+    render_kpi_cards(
+        filtered_df,
+        "Filtered Ticket Snapshot",
+        "Metrics based on the active filters above.",
+    )
+    render_section_header(
+        "Filtered Ticket Distribution",
+        "Visuals update immediately with your current selections.",
+    )
+
+    if filtered_df.empty:
+        st.info("No charts to display for the current filters. Adjust selections above to explore more data.")
+    else:
+        col_21, col_22, col_23 = st.columns(3)
+        with col_21:
+            st.markdown("**Concern Type Mix (Filtered)**")
+            concern_filtered = filtered_df['concern_type'].value_counts().reset_index()
+            concern_filtered.columns = ['Concern Type', 'Count']
+            fig = px.pie(concern_filtered, values='Count', names='Concern Type')
+            st.plotly_chart(fig, key="concern_type_filtered", width = 'content')
+        with col_22:
+            st.markdown("**Tickets by Region (Filtered)**")
+            region_filtered = filtered_df['region'].value_counts().reset_index()
+            region_filtered.columns = ['Region', 'Count']
+            fig = px.pie(region_filtered, values='Count', names='Region')
+            st.plotly_chart(fig, key="region_filtered", width = 'content')
+        with col_23:
+            st.markdown("**Level 1 Categories (Filtered)**")
+            level1_filtered = filtered_df['level_1_classification'].value_counts().reset_index()
+            level1_filtered.columns = ['Level 1 Category', 'Count']
+            fig = px.pie(level1_filtered, values='Count', names='Level 1 Category')
+            st.plotly_chart(fig, key="level_1_filtered", width = 'content')
+
+        col_24, col_25, col_26 = st.columns(3)
+        with col_24:
+            st.markdown("**Level 2 Focus Areas (Filtered)**")
+            level2_filtered = filtered_df['level_2_classification'].value_counts().head(10)
+            st.bar_chart(level2_filtered, horizontal=True, x_label='Count', y_label='Issue', width = 'content')
+        with col_25:
+            st.markdown("**Top Products (Filtered)**")
+            product_filtered = filtered_df['product'].value_counts().head(10)
+            st.bar_chart(product_filtered, horizontal=True, x_label='Count', y_label='Product', width = 'content')
+        with col_26:
+            st.markdown("**Tickets by City (Filtered)**")
+            city_filtered = filtered_df['city'].value_counts().head(10)
+            st.bar_chart(city_filtered, horizontal=True, x_label='Count', y_label='City', width = 'content')
+
+    render_section_divider()
+    filtered_count = len(filtered_df)
+    if filtered_count:
+        caption = f"{filtered_count:,} tickets match the current filters."
+    else:
+        caption = "No tickets match the current filters. Adjust your selections above to see results."
+    render_section_header("Ticket Details", caption)
+    if filtered_df.empty:
+        st.info("Try broadening the filters to explore more tickets.")
+    else:
+        st.dataframe(filtered_df, width = 'content')
+
+    render_section_divider()
+    render_section_header(
+        "Ticket Summaries",
+        "Generate concise summaries for the first 20 tickets in view.",
+    )
+    summary_config = {
+        "Full Ticket Narrative": ("expanded_description", "Expanded_Description_Collection"),
+        "Customer Issue": ("customer_issue", "Customer_Issue_Collection"),
+        "Resolution Provided": ("resolution_provided_summary", "Resolution_Provided_Collection"),
+        "Root Cause": ("root_cause", "Root_Cause_Collection"),
+    }
+    user_selection = st.segmented_control(
+        label="Select narrative focus",
+        options=list(summary_config.keys()),
+        key="action_control",
+        default= "Full Ticket Narrative",
+    )
+    column_name, collection_name = summary_config[user_selection]
+    st.session_state.tickets = filtered_df[column_name].dropna().tolist()
+    st.session_state.collection_name = collection_name
+    st.button('Generate Summary', on_click=summarise_ticket, type="primary")
+    st.markdown(st.session_state.summary_output or "*No summary generated yet.*")

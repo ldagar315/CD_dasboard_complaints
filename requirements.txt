@@ -4,3 +4,4 @@ chromadb
 sentence_transformers
 scikit-learn
 gdown
+streamlit_theme
