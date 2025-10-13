@@ -6,6 +6,5 @@ scikit-learn
 gdown
 streamlit_theme
 plotly
-zipfile 
 pandas
 numpy
