@@ -11,6 +11,10 @@ import zipfile
 import datetime
 import plotly.express as px
 import numpy as np
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import product_category
+
 
 try:
     from streamlit_theme import st_theme
@@ -188,6 +192,7 @@ COLUMN_NAMES = [
     "customer_issue",
     "root_cause",
     "resolution_provided_summary",
+    "product_category",
 ]
 
 # check if vector_db folder exists, if not create it
@@ -237,12 +242,6 @@ class FinalSummary(dspy.Signature):
     )
 final_summarise = dspy.ChainOfThought(FinalSummary)
 
-# DSPy context for summarise_ticket
-import os
-import math
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import streamlit as st
-import dspy
 
 MODELS = ["openai/gpt-oss-120b", "openai/qwen-3-235b-a22b-instruct-2507", "openai/llama-4-maverick-17b-128e-instruct", "openai/qwen-3-32b", "openai/llama-4-scout-17b-16e-instruct"]
 
@@ -357,6 +356,9 @@ def load_ticket_dataframe(url: str) -> pd.DataFrame:
     df = pd.read_csv(url)
     df = df[df["CONCERN AREA NAME"] != "Stop Customer"]
     df = df[df["CONCERN TYPE NAME"] != "Internal"]
+    categories = product_category.categories
+    product_to_category = {product: cat for cat, products in categories.items() for product in products}
+    df["product_category"] = df["product"].map(product_to_category).fillna("")
     df = df.rename(columns=lambda x: x.strip().replace(" ", "_").lower())
     df.columns = [c.strip() for c in df.columns]
     df = df[COLUMN_NAMES]
@@ -379,6 +381,22 @@ def apply_selected_filters(df: pd.DataFrame, selections: dict, exclude: Optional
         filtered = filtered[filtered[col].isin(selected_values)]
     return filtered
 
+def apply_text_filters(df: pd.DataFrame, root_cause_query: str = "", resolution_query: str = "") -> pd.DataFrame:
+    # AND across words within each field. Case-insensitive. Ignores NaNs.
+    out = df
+    if root_cause_query:
+        words = root_cause_query.split()
+        mask = pd.Series(True, index=out.index)
+        for w in words:
+            mask &= out["root_cause"].astype(str).str.contains(w, case=False, na=False)
+        out = out[mask]
+    if resolution_query:
+        words = resolution_query.split()
+        mask = pd.Series(True, index=out.index)
+        for w in words:
+            mask &= out["resolution_provided_summary"].astype(str).str.contains(w, case=False, na=False)
+        out = out[mask]
+    return out
 
 def get_available_options(df: pd.DataFrame, selections: dict, target_col: str) -> List:
     subset = apply_selected_filters(df, selections, exclude=target_col)
@@ -497,15 +515,15 @@ if __name__ == "__main__":
     with col_4:
         st.markdown("**Level 2 Focus Areas**")
         level2_counts = df['level_2_classification'].value_counts().head(10)
-        st.bar_chart(level2_counts, horizontal=True, x_label='Count', y_label='Issue', width = 'content')
+        st.bar_chart(level2_counts, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort="-count")
     with col_5:
         st.markdown("**Top Products**")
         product_counts = df['product'].value_counts().head(10)
-        st.bar_chart(product_counts, horizontal=True, x_label='Count', y_label='Product', width = 'content')
+        st.bar_chart(product_counts, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort="-count")
     with col_6:
         st.markdown("**Tickets by City**")
         city_counts = df['city'].value_counts().head(10)
-        st.bar_chart(city_counts, horizontal=True, x_label='Count', y_label='City', width = 'content')
+        st.bar_chart(city_counts, horizontal=True, x_label='Count', y_label='City', width = 'content', sort="-count")
 
     render_section_divider()
     render_section_header(
@@ -549,8 +567,25 @@ if __name__ == "__main__":
             options = get_available_options(df, selected_filters, column_name)
             ensure_multiselect_state(key, options)
             selected_filters[column_name] = st.multiselect(label, options, key=key)
+    col_31, col_32, col_33 = st.columns(3)
+    with col_31:
+        product_categories = sorted(df['product_category'].dropna().unique().tolist())
+        ensure_multiselect_state("filter_product_category", product_categories)
+        selected_filters["product_category"] = st.multiselect("Product Category", product_categories, key="filter_product_category")
+    
+    with col_32:
+        root_cause_filter = st.text_input("Filter by Root Cause", key="root_cause_filter")
+    with col_33:
+        resolution_filter = st.text_input("Filter by Resolution Provided", key="resolution_filter")
 
-    st.session_state.filtered_df = apply_selected_filters(df, selected_filters).copy()
+# 3) Apply text filters on the already-filtered df
+    st.session_state.filtered_df = apply_text_filters(
+        df,
+        root_cause_query=root_cause_filter,
+        resolution_query=resolution_filter,
+    )
+
+    st.session_state.filtered_df = apply_selected_filters(st.session_state.filtered_df, selected_filters).copy()
     filtered_df = st.session_state.filtered_df
 
     render_section_divider()
@@ -591,15 +626,16 @@ if __name__ == "__main__":
         with col_24:
             st.markdown("**Level 2 Focus Areas (Filtered)**")
             level2_filtered = filtered_df['level_2_classification'].value_counts().head(10)
-            st.bar_chart(level2_filtered, horizontal=True, x_label='Count', y_label='Issue', width = 'content')
+            st.bar_chart(level2_filtered, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort="-count")
         with col_25:
             st.markdown("**Top Products (Filtered)**")
             product_filtered = filtered_df['product'].value_counts().head(10)
-            st.bar_chart(product_filtered, horizontal=True, x_label='Count', y_label='Product', width = 'content')
+            st.bar_chart(product_filtered, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort="-count")
         with col_26:
             st.markdown("**Tickets by City (Filtered)**")
             city_filtered = filtered_df['city'].value_counts().head(10)
-            st.bar_chart(city_filtered, horizontal=True, x_label='Count', y_label='City', width = 'content')
+            st.bar_chart(city_filtered, horizontal=True, x_label='Count', y_label='City', width = 'content', sort="-count")
+
 
     render_section_divider()
     filtered_count = len(filtered_df)
@@ -616,7 +652,7 @@ if __name__ == "__main__":
     render_section_divider()
     render_section_header(
         "Ticket Summaries",
-        "Generate concise summaries for the first 20 tickets in view.",
+        "Qualtitative summaries of filtered tickets to know key insights.",
     )
     summary_config = {
         "Full Ticket Narrative": ("expanded_description", "Expanded_Description_Collection"),
