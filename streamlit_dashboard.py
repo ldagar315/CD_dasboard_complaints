@@ -527,7 +527,7 @@ if __name__ == "__main__":
                             zip_path = _drive_download(fid, os.path.join("downloads", fname), api_key)
                             with zipfile.ZipFile(zip_path, "r") as zf:
                                 zf.extractall("VectorDB")
-                            st.success(f"Downloaded and extracted: {fname}")
+                            st.success(f"Dataset Loading Complete!", icon="✅")
 
             st.session_state.vector_db_initialized = True
 
