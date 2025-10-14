@@ -14,6 +14,7 @@ import numpy as np
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import product_category
+import requests
 
 
 try:
@@ -22,7 +23,7 @@ except ImportError:
     st_theme = None
 
 DATA_URL = "https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv"
-
+FOLDER_ID = "1uxnGomO1D2oJShW67c43GeobVbE1TLKZ"
 THEME_COLORS = {
     "light": {
         "primary_text": "#1F2A44",
@@ -445,13 +446,52 @@ def render_kpi_cards(df: pd.DataFrame, title: str, caption: Optional[str] = None
             unsafe_allow_html=True,
         )
 
+def _google_api_key():
+    return st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
+def _drive_list(folder_id: str, api_key: str):
+    url = (
+        "https://www.googleapis.com/drive/v3/files"
+        f"?q='{folder_id}'+in+parents"
+        "&fields=files(id,name,mimeType)"
+        f"&key={api_key}"
+    )
+    r = requests.get(url, timeout=30); r.raise_for_status()
+    return r.json().get("files", []) or []
+
+def _drive_get_shortcut_target(file_id: str, api_key: str):
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?fields=id,name,mimeType,shortcutDetails(targetId,targetMimeType)&key={api_key}"
+    r = requests.get(url, timeout=30); r.raise_for_status()
+    j = r.json()
+    sd = j.get("shortcutDetails")
+    if sd and sd.get("targetId"):
+        return sd["targetId"], j.get("name"), sd.get("targetMimeType")
+    return file_id, j.get("name"), j.get("mimeType")
+
+def _drive_download(file_id: str, out_path: str, api_key: str):
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&key={api_key}"
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with requests.get(url, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        with open(out_path, "wb") as f:
+            for chunk in resp.iter_content(1024 * 256):
+                if chunk:
+                    f.write(chunk)
+    return out_path
 
 if __name__ == "__main__":
 
     base_theme = detect_base_theme()
     palette = THEME_COLORS.get(base_theme, THEME_COLORS["light"])
-    st.set_page_config(layout="wide", page_title="Customer Support Tickets")
+    st.set_page_config(
+    page_title="Customer Support Insights",
+    page_icon="🧊",
+    layout="wide",
+    menu_items={
+        'Report a bug': "mailto:lakshaydagar@countrydelight.in",
+        'About': "This app is built using Streamlit and DSPy to provide insights into customer support tickets."
+    }
+    )
     st.markdown(build_page_style(palette, base_theme), unsafe_allow_html=True)
     logo_path = "Frame 6.png"
     if os.path.exists(logo_path):
@@ -469,15 +509,31 @@ if __name__ == "__main__":
     st.session_state.df = load_ticket_dataframe(DATA_URL)
     df = st.session_state.df
     if not st.session_state.vector_db_initialized:
-        latest_date_in_data = df["created_date"].max()
-        if pd.notna(latest_date_in_data) and today_date > latest_date_in_data:
-            url = 'https://drive.google.com/drive/folders/1uxnGomO1D2oJShW67c43GeobVbE1TLKZ'
-            result = gdown.download_folder(url)
-            zip_file_path = result[0]
-            with zipfile.ZipFile(zip_file_path, 'r') as zf:
-                extract_to_directory = 'VectorDB'
-                zf.extractall(extract_to_directory)
-        st.session_state.vector_db_initialized = True
+            latest_date_in_data = df["created_date"].max()
+            if pd.notna(latest_date_in_data) and today_date > latest_date_in_data:
+                api_key = _google_api_key()
+                if not api_key:
+                    st.error("Missing GOOGLE_API_KEY for Google Drive access.")
+                else:
+                    files = _drive_list(FOLDER_ID, api_key)
+                    if len(files) != 1:
+                        st.error(f"Expected exactly 1 file in folder, found {len(files)}.")
+                    else:
+                        fid, fname, mtype = files[0]["id"], files[0]["name"], files[0]["mimeType"]
+                        # Resolve Google Drive shortcut if needed
+                        if mtype == "application/vnd.google-apps.shortcut":
+                            fid, fname, mtype = _drive_get_shortcut_target(fid, api_key)
+
+                        # Enforce ZIP
+                        if not (fname.lower().endswith(".zip") or mtype == "application/zip"):
+                            st.error(f"File is not a ZIP (name={fname}, mimeType={mtype}).")
+                        else:
+                            zip_path = _drive_download(fid, os.path.join("downloads", fname), api_key)
+                            with zipfile.ZipFile(zip_path, "r") as zf:
+                                zf.extractall("VectorDB")
+                            st.success(f"Downloaded and extracted: {fname}")
+
+            st.session_state.vector_db_initialized = True
 
     render_kpi_cards(
         df,
@@ -496,38 +552,47 @@ if __name__ == "__main__":
         st.markdown("**Concern Type Mix**")
         concern_counts = df['concern_type'].value_counts().reset_index()
         concern_counts.columns = ['Concern Type', 'Count']
-        fig = px.pie(concern_counts, values='Count', names='Concern Type')
-        st.plotly_chart(fig, key="concern_type", width = 'content')
+        fig_concern_type = px.pie(concern_counts, values='Count', names='Concern Type')
+        st.plotly_chart(fig_concern_type)
     with col_2:
         st.markdown("**Tickets by Region**")
         region_counts = df['region'].value_counts().reset_index()
         region_counts.columns = ['Region', 'Count']
-        fig = px.pie(region_counts, values='Count', names='Region')
-        st.plotly_chart(fig, key="region", width = 'content')
+        vc = df['region'].value_counts(dropna=False).rename_axis('Region').reset_index(name='Count')
+
+        total = vc['Count'].sum()
+        thresh = 0.01 * total  # 1%
+        small = vc['Count'] < thresh
+        region_counts = pd.concat(
+            [vc[~small], pd.DataFrame([{'Region':'Other','Count': vc.loc[small,'Count'].sum()}])]
+            , ignore_index=True
+        ) if small.any() else vc
+        fig_region = px.pie(region_counts, values='Count', names='Region')
+        st.plotly_chart(fig_region)
     with col_3:
         st.markdown("**Level 1 Categories**")
         level1_counts = df['level_1_classification'].value_counts().reset_index()
         level1_counts.columns = ['Level 1 Category', 'Count']
-        fig = px.pie(level1_counts, values='Count', names='Level 1 Category')
-        st.plotly_chart(fig, key="level_1", width = 'content')
+        fig_level1 = px.pie(level1_counts, values='Count', names='Level 1 Category')
+        st.plotly_chart(fig_level1)
 
     col_4, col_5, col_6 = st.columns(3)
     with col_4:
         st.markdown("**Level 2 Focus Areas**")
         level2_counts = df['level_2_classification'].value_counts().head(10)
-        st.bar_chart(level2_counts, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort="-count")
+        st.bar_chart(level2_counts, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort="-count", color = "#FF7633")
     with col_5:
         st.markdown("**Top Products**")
         product_counts = df['product'].value_counts().head(10)
-        st.bar_chart(product_counts, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort="-count")
+        st.bar_chart(product_counts, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort="-count", color = "#337EFF")
     with col_6:
         st.markdown("**Tickets by City**")
         city_counts = df['city'].value_counts().head(10)
-        st.bar_chart(city_counts, horizontal=True, x_label='Count', y_label='City', width = 'content', sort="-count")
+        st.bar_chart(city_counts, horizontal=True, x_label='Count', y_label='City', width = 'content', sort="-count", color = "#FFEB33")
 
     render_section_divider()
+    st.markdown("# Filter Tickets")
     render_section_header(
-        "Filter Tickets",
         "Combine filters to narrow the analysis. Options update based on your selections.",
     )
 
@@ -594,9 +659,9 @@ if __name__ == "__main__":
         "Filtered Ticket Snapshot",
         "Metrics based on the active filters above.",
     )
+    st.markdown("##")
     render_section_header(
-        "Filtered Ticket Distribution",
-        "Visuals update immediately with your current selections.",
+        "Filtered Ticket Distribution"
     )
 
     if filtered_df.empty:
@@ -607,34 +672,43 @@ if __name__ == "__main__":
             st.markdown("**Concern Type Mix (Filtered)**")
             concern_filtered = filtered_df['concern_type'].value_counts().reset_index()
             concern_filtered.columns = ['Concern Type', 'Count']
-            fig = px.pie(concern_filtered, values='Count', names='Concern Type')
-            st.plotly_chart(fig, key="concern_type_filtered", width = 'content')
+            fig_concern_type_filter = px.pie(concern_filtered, values='Count', names='Concern Type')
+            st.plotly_chart(fig_concern_type_filter, key="pie_concern_type_filtered")
         with col_22:
             st.markdown("**Tickets by Region (Filtered)**")
             region_filtered = filtered_df['region'].value_counts().reset_index()
             region_filtered.columns = ['Region', 'Count']
-            fig = px.pie(region_filtered, values='Count', names='Region')
-            st.plotly_chart(fig, key="region_filtered", width = 'content')
+            vc = filtered_df['region'].value_counts(dropna=False).rename_axis('Region').reset_index(name='Count')
+            total = vc['Count'].sum()
+            thresh = 0.01 * total  # 1%
+            small = vc['Count'] < thresh
+            region_counts = pd.concat(
+                [vc[~small], pd.DataFrame([{'Region':'Other','Count': vc.loc[small,'Count'].sum()}])]
+                , ignore_index=True
+            ) if small.any() else vc
+            fig_region_filter = px.pie(region_counts, values='Count', names='Region')
+            st.plotly_chart(fig_region_filter, key="pie_region_filtered")
         with col_23:
             st.markdown("**Level 1 Categories (Filtered)**")
             level1_filtered = filtered_df['level_1_classification'].value_counts().reset_index()
             level1_filtered.columns = ['Level 1 Category', 'Count']
-            fig = px.pie(level1_filtered, values='Count', names='Level 1 Category')
-            st.plotly_chart(fig, key="level_1_filtered", width = 'content')
+            fig_level1_filter = px.pie(level1_filtered, values='Count', names='Level 1 Category')
+            st.plotly_chart(fig_level1_filter, key="pie_level1_filtered")
 
         col_24, col_25, col_26 = st.columns(3)
         with col_24:
             st.markdown("**Level 2 Focus Areas (Filtered)**")
             level2_filtered = filtered_df['level_2_classification'].value_counts().head(10)
-            st.bar_chart(level2_filtered, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort="-count")
+            st.bar_chart(level2_filtered, horizontal=True, x_label='Count', y_label='Issue', width = 'content', sort='-count', color = "#FFCF33")
         with col_25:
             st.markdown("**Top Products (Filtered)**")
             product_filtered = filtered_df['product'].value_counts().head(10)
-            st.bar_chart(product_filtered, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort="-count")
+            st.bar_chart(product_filtered, horizontal=True, x_label='Count', y_label='Product', width = 'content', sort='-count', color = "#FF337A")
         with col_26:
             st.markdown("**Tickets by City (Filtered)**")
             city_filtered = filtered_df['city'].value_counts().head(10)
-            st.bar_chart(city_filtered, horizontal=True, x_label='Count', y_label='City', width = 'content', sort="-count")
+            st.bar_chart(city_filtered, horizontal=True, x_label='Count', y_label='City', width = 'content', sort='-count', color = "#336DFF")
+
 
 
     render_section_divider()
@@ -642,8 +716,10 @@ if __name__ == "__main__":
     if filtered_count:
         caption = f"{filtered_count:,} tickets match the current filters."
     else:
-        caption = "No tickets match the current filters. Adjust your selections above to see results."
-    render_section_header("Ticket Details", caption)
+        caption = "No tickets match the current filters. Adjust your selections above to see results."  
+    st.markdown('### Ticket Details')
+    st.write(caption)
+
     if filtered_df.empty:
         st.info("Try broadening the filters to explore more tickets.")
     else:
@@ -671,3 +747,19 @@ if __name__ == "__main__":
     st.session_state.collection_name = collection_name
     st.button('Generate Summary', on_click=summarise_ticket, type="primary")
     st.markdown(st.session_state.summary_output or "*No summary generated yet.*")
+    st.divider()
+    st.markdown("### About This Dashboard")
+    st.write(
+        """
+        This app was built to analyse customer support tickets, helping teams identify key issues and areas for improvement.
+        
+        Currently the dashboard shows metrics from last 15 days of customer support tickets.
+        We deliberately kept the some tickets out of the analysis to ensure that insights are drawn from relevant tickets only.
+        The excluded tickets are which request for stopping the service ("because they subscribed and service was not available to their location") and internal tickets which are raised by the Customer Support Team to communicate among themselves.
+
+        For any questions or feedback, please contact [Lakshay Dagar](mailto:lakshaydagar@countrydelight.in) or [Nishant Rajpoot](mailto:nishantrajpoot@countrydelight.in).
+        """)
+    st.divider()
+    st.write("© 2025 Country Delight")
+    st.write("Built with ❤️ by Digital Innovations Team | Country Delight")
+
