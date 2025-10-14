@@ -500,11 +500,7 @@ if __name__ == "__main__":
         "<div class='dashboard-title'>Customer Support Insights</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "<div class='dashboard-subtitle'>Monitor complaint trends, surface hotspots, and summarise customer conversations in seconds.</div>",
-        unsafe_allow_html=True,
-    )
-    st.caption(f"Adaptive styling applied for {base_theme.capitalize()} mode.")
+    st.markdown("##### Monitoring Customer Support Tickets, and Draw Insights")
 
     st.session_state.df = load_ticket_dataframe(DATA_URL)
     df = st.session_state.df
