@@ -214,7 +214,7 @@ if 'filtered_df' not in st.session_state:
 if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame()
 if 'vector_db_initialized' not in st.session_state:
-    st.session_state.vector_db_initialized = False
+    st.session_state.vector_db_initialized = True
 cerebras_key = st.secrets.get("CEREBRAS_API_KEY")
 if not cerebras_key:
     st.session_state.summary_output = "API key not configured. Check Streamlit Cloud secrets."
@@ -310,8 +310,8 @@ def summarise_tickets_second():
     except Exception as e:
         print(f"Error during PCA summarization: {str(e)}")
 def summarise_ticket():
-    if len(st.session_state.tickets) > 100:
-        summarise_tickets_second()
+    #if len(st.session_state.tickets) > 100:
+        #summarise_tickets_second()
     tickets = st.session_state.tickets[:100]
     if not tickets:
         st.session_state.summary_output = "No tickets selected for summary."
