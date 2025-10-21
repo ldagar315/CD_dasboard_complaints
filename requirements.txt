@@ -1,3 +1,7 @@
+protobuf==3.20.3
+streamlit==1.32.0
+altair==4.2.2
+
 dspy
 openpyxl
 chromadb
@@ -8,6 +12,11 @@ streamlit_theme
 plotly
 pandas
 numpy
+
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
 protobuf==3.20
 streamlit>=1.23.0
 altair>=5
