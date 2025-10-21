@@ -15,6 +15,16 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import product_category
 import requests
+import io
+from pathlib import Path
+import json
+
+# Google Drive libs
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.errors import HttpError
+
 
 
 try:
@@ -24,6 +34,11 @@ except ImportError:
 
 DATA_URL = "https://docs.google.com/spreadsheets/d/1MSYdK-Z4qjgudUI6Ky3t3U-Qc2Dxx95D/export?format=csv"
 FOLDER_ID = "1uxnGomO1D2oJShW67c43GeobVbE1TLKZ"
+
+GOOGLE_AUTH_METHOD = "service_account"
+
+SERVICE_ACCOUNT_FILE = st.secrets.get("google_service_account")
+
 THEME_COLORS = {
     "light": {
         "primary_text": "#1F2A44",
@@ -46,6 +61,50 @@ THEME_COLORS = {
         "divider": "rgba(148, 163, 184, 0.25)",
     },
 }
+
+def build_drive_service():
+    method = GOOGLE_AUTH_METHOD
+    scopes = ["https://www.googleapis.com/auth/drive"]
+    if method == "service_account":
+        sa_file = SERVICE_ACCOUNT_FILE
+        creds = service_account.Credentials.from_service_account_file(sa_file, scopes=scopes)
+    else:
+        raise ValueError("Unknown GOOGLE_AUTH_METHOD")
+    return build('drive', 'v3', credentials=creds)
+
+
+def list_files_in_folder(folder_id: str):
+    q = f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'"
+    files, token = [], None
+    while True:
+        resp = drive_service.files().list(
+            q=q,
+            fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType)",
+            pageSize=1000,
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            pageToken=token
+        ).execute()
+        files.extend(resp.get("files", []))
+        token = resp.get("nextPageToken")
+        if not token: break
+    return files
+
+
+def download_drive_file(file_id: str, dest_path: Path):
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.FileIO(str(dest_path), mode='wb')
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+        if status:
+            print(f"Download {file_id}: {int(status.progress() * 100)}%")
+    print(f"Downloaded file to {dest_path}")
+    return dest_path
+
+
+
 
 def detect_base_theme() -> str:
     """Return 'dark' or 'light' depending on the current browser theme."""
@@ -354,7 +413,7 @@ def summarise_ticket():
 
 @st.cache_data(show_spinner=False)
 def load_ticket_dataframe(url: str) -> pd.DataFrame:
-    df = pd.read_csv(url)
+    df = pd.read_csv(url, low_memory=False)
     df = df[df["CONCERN AREA NAME"] != "Stop Customer"]
     df = df[df["CONCERN TYPE NAME"] != "Internal"]
     categories = product_category.categories
@@ -507,11 +566,11 @@ if __name__ == "__main__":
     if not st.session_state.vector_db_initialized:
             latest_date_in_data = df["created_date"].max()
             if pd.notna(latest_date_in_data) and today_date > latest_date_in_data:
-                api_key = _google_api_key()
-                if not api_key:
-                    st.error("Missing GOOGLE_API_KEY for Google Drive access.")
+                drive_service = build_drive_service()
+                if not drive_service:
+                    st.error("Missing drive_service for Google Drive access.")
                 else:
-                    files = _drive_list(FOLDER_ID, api_key)
+                    files = list_files_in_folder(FOLDER_ID)
                     if len(files) != 1:
                         st.error(f"Expected exactly 1 file in folder, found {len(files)}.")
                     else:
@@ -524,7 +583,7 @@ if __name__ == "__main__":
                         if not (fname.lower().endswith(".zip") or mtype == "application/zip"):
                             st.error(f"File is not a ZIP (name={fname}, mimeType={mtype}).")
                         else:
-                            zip_path = _drive_download(fid, os.path.join("downloads", fname), api_key)
+                            zip_path = download_drive_file(fid, os.path.join("downloads", fname))
                             with zipfile.ZipFile(zip_path, "r") as zf:
                                 zf.extractall("VectorDB")
                             st.success(f"Dataset Loading Complete!", icon="✅")
